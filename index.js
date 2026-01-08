@@ -4,91 +4,58 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
-
-// Middleware
 app.use(express.json());
 app.use(cors());
 
-// Database Connection Configuration
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false // Required for NeonDB/Railway SSL connections
-    }
+    ssl: { rejectUnauthorized: false }
 });
 
-// Test Route to check if API is live
-app.get('/', (req, res) => {
-    res.send('Game Store API is running...');
-});
+// 1. LOGIN & SIGNUP (Existing code stays here...)
 
-// 1. SIGNUP API
-app.post('/signup', async (req, res) => {
-    const { username, password } = req.body;
-    
-    if (!username || !password) {
-        return res.status(400).json({ error: "Username and password are required" });
-    }
-
-    try {
-        const result = await pool.query(
-            'INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id, username',
-            [username, password]
-        );
-        res.status(201).json({ 
-            message: "User registered successfully", 
-            userId: result.rows[0].id 
-        });
-    } catch (err) {
-        console.error(err);
-        if (err.code === '23505') { // Unique violation error code
-            res.status(400).json({ error: "Username already exists" });
-        } else {
-            res.status(500).json({ error: "Internal server error" });
-        }
-    }
-});
-
-// 2. LOGIN API
-app.post('/login', async (req, res) => {
-    const { username, password } = req.body;
-
-    try {
-        const result = await pool.query(
-            'SELECT id, username FROM users WHERE username = $1 AND password = $2',
-            [username, password]
-        );
-
-        if (result.rows.length > 0) {
-            res.json({ 
-                success: true, 
-                message: "Login successful", 
-                user: result.rows[0] 
-            });
-        } else {
-            res.status(401).json({ success: false, message: "Invalid username or password" });
-        }
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Internal server error" });
-    }
-});
-
-// 3. GET GAMES API
+// 2. GET ALL GAMES
 app.get('/games', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM games ORDER BY id DESC');
+        const result = await pool.query('SELECT * FROM games ORDER BY id ASC');
         res.json(result.rows);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Could not fetch games" });
+        res.status(500).json({ error: err.message });
     }
 });
 
-// IMPORTANT: Use process.env.PORT for Railway deployment
-const PORT = process.env.PORT || 3000;
-
-// Listen on 0.0.0.0 to allow external connections on Railway
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server is running on port ${PORT}`);
+// 3. PLACE ORDER (Fixes the "Order Failed" error)
+app.post('/orders', async (req, res) => {
+    const { username, game_title, price } = req.body;
+    try {
+        await pool.query(
+            'INSERT INTO orders (username, game_title, price) VALUES ($1, $2, $3)',
+            [username, game_title, price]
+        );
+        res.status(201).json({ message: "Order placed!" });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Database error" });
+    }
 });
+
+// 4. GET MY ORDERS (With Image Support)
+app.get('/my-orders/:username', async (req, res) => {
+    const { username } = req.params;
+    try {
+        // This SQL JOIN links the order to the game to get the image_url
+        const result = await pool.query(
+            `SELECT o.id, o.game_title as title, o.price, g.image_url 
+             FROM orders o 
+             JOIN games g ON o.game_title = g.title 
+             WHERE o.username = $1`, 
+            [username]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
