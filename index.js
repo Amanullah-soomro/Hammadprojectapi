@@ -104,6 +104,17 @@ app.get('/my-orders/:username', async (req, res) => {
     }
 });
 
+app.delete('/empty-cart/:username', async (req, res) => {
+    const { username } = req.params;
+    try {
+        await pool.query('DELETE FROM orders WHERE username = $1', [username]);
+        res.json({ message: "Cart emptied successfully" });
+    } catch (err) {
+        console.error("Empty Cart Error:", err.message);
+        res.status(500).json({ error: "Failed to empty cart" });
+    }
+});
+
 // Server Configuration
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
